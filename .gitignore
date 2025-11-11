@@ -1,0 +1,50 @@
+# ------------------------------------
+# 1. uv/Virtual Environment Exclusions
+# ------------------------------------
+# Exclude the environment directory managed by uv/venv
+.venv/
+venv/
+env/
+.env
+
+# ------------------------------------
+# 2. Python Runtime and Build Artifacts
+# ------------------------------------
+# Byte-compiled files
+__pycache__/
+*.pyc
+*.pyo
+
+# Shared library files
+*.so
+
+# Distribution and build artifacts
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# ------------------------------------
+# 3. Testing and Coverage
+# ------------------------------------
+.pytest_cache/
+htmlcov/
+.coverage
+
+# ------------------------------------
+# 4. IDE and Editor Files
+# ------------------------------------
+# PyCharm/IntelliJ
+.idea/
+
+# VS Code
+.vscode/
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints
+
+# ------------------------------------
+# 5. OS Generated Files
+# ------------------------------------
+.DS_Store
+Thumbs.db
