@@ -72,3 +72,11 @@ async def get_channel_with_retries() -> Optional[Channel]:
 		if RABBITMQ_CHANNEL:
 			return RABBITMQ_CHANNEL
 		await asyncio.sleep(MAX_TIMEOUT_BEFORE_RETRY)
+
+
+"""A function that serves the purpose of returing a RabbitMQ connection"""
+async def get_rabbitmq_connection():
+	for current_try in range(MAX_N_RETRIES):
+		if RABBITMQ_CONNECTION:
+			return RABBITMQ_CONNECTION
+		await asyncio.sleep(MAX_TIMEOUT_BEFORE_RETRY)
