@@ -2,6 +2,9 @@ import redis.asyncio as redis
 from redis.asyncio import Redis
 import json
 from fastapi_limiter import FastAPILimiter
+import aio_pika
+
+
 
 
 async def initialize_redis_client():
@@ -17,7 +20,7 @@ async def initialize_redis_client():
 
 
 
-async def add_to_map(notification_id, notification_payload):
+async def set_notification(notification_id, notification_payload):
     try:
         # Use HSET with the mapping argument (best practice for Redis hashes)
         # Keys and values in the dict are automatically handled by redis-py
@@ -31,8 +34,9 @@ async def add_to_map(notification_id, notification_payload):
         print(f"[⛔] Could not save {notification_id} to Redis: ", e)
 
 
-async def update_map_with_key():
+async def process_notification_message(message: aio_pika.IncomingMessage):
+	"""Handles the incoming message, and updates Redis"""
 	pass
 
-async def delete_from_map_with_key():
+async def get_notification_status():
 	pass

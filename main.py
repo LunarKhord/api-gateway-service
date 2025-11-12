@@ -91,7 +91,6 @@ async def notification(request: Request):
         if response.notification_type == NotificationTypeEnum.EMAIL:
             # Place Valid Payload into the Email Queue
             RABBITMQ_CHANNEL = await get_channel_with_retries()
-            print(type(response.model_dump_json()))
             await publish_email_message(RABBITMQ_CHANNEL, response.model_dump_json(), response.priority)
         elif response.notification_type == NotificationTypeEnum.PUSH:
             # Place Valid Payload into the Push Queue

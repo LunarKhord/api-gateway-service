@@ -6,7 +6,7 @@ from fastapi import FastAPI
 import asyncio
 from aio_pika import Channel
 
-from utils.redis.redis_utils import initialize_redis_client
+from utils.redis.redis_utils import initialize_redis_client, process_notification_message
 
 """
 Component,Example Value,Role
@@ -18,9 +18,14 @@ Routing Key,email,"Tells the Exchange: Deliver this message to the queue bound w
 
 # Setup up Logger
 logger = logging.getLogger("uvicorn.error")
+
+
 RABBITMQ_CONNECTION: Optional[RobustConnection] = None
 RABBITMQ_CHANNEL: Optional[Channel] = None
 
+#  Meant for the Exchange Worker
+STATUS_EXCHANGE_NAME = "status.update.exchange"
+STATUS_QUEUE = "status.updates"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -36,9 +41,23 @@ async def lifespan(app: FastAPI):
 		# Create a channel for publishing
 		RABBITMQ_CHANNEL = await RABBITMQ_CONNECTION.channel()
 
-		# Declare an Exchange, it acts as the centeral hub for all incoming messages
+		# Declare an Exchange, it acts as the centeral hub for all outgoing messages FORWARD
 		await RABBITMQ_CHANNEL.declare_exchange(name="notifications.direct",type="direct",durable=True)
-		
+
+		# Declare an Exchange, it acts as the centeral hub for all incoming messages REVERSE
+		# it holds the notification updates of every notification sent downstream
+		# Exchange
+		status_update = await RABBITMQ_CHANNEL.declare_exchange(name=STATUS_EXCHANGE_NAME, type="topic", durable=True)
+		# # Queue
+		status_queue = await RABBITMQ_CHANNEL.declare_queue(STATUS_QUEUE, durable=True)
+		await status_queue.bind(STATUS_EXCHANGE_NAME, routing_key="status.update.#")
+
+		# # Start the status consumer task
+		# This creates an async task that serves the purpose of passing incoming messages into the queue
+		# onto the process_notification_message function, it's purpose would be to update redis to
+		# suite the current notification state.
+		asyncio.create_task(status_queue.consume(process_notification_message))
+
 		logger.info(" [x] Successfully connected to RabbitMQ and declared an exchange.")
 	except Exception as e:
 		logger.error(f"[x] A fatail error occured, during RabbitMQ connection stage;Have a look see: ", e)

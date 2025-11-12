@@ -2,7 +2,7 @@ import aio_pika
 import json
 import uuid
 from datetime import datetime, timezone
-from utils.redis.redis_utils import add_to_map
+from utils.redis.redis_utils import set_notification
 
 EXCHANGE_NAME = "notifications.direct"
 
@@ -42,7 +42,7 @@ async def publish_email_message(channel: aio_pika.Channel, json_string_payload: 
 	# Pass it to redis for storage, tracks the notification status
 	try:
 		print(f" [⚓] Sending notification id {tracking_id} to Redis.... ")
-		await add_to_map(tracking_id, notification_status)
+		await set_notification(tracking_id, notification_status)
 		print(f" [✅] notification id {tracking_id} was sent to Redis. ")
 	except Exception as e:
 		print(f" [⛔] notification id {tracking_id} was not sent to Redis; ", e)
