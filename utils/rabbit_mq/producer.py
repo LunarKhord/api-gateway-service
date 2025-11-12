@@ -3,10 +3,12 @@ import json
 import uuid
 from datetime import datetime, timezone
 from utils.redis.redis_utils import set_notification
+import logging
 
 EXCHANGE_NAME = "notifications.direct"
 
-
+logger = logging.getLogger(__name__)
+ 
 async def publish_email_message(channel: aio_pika.Channel, json_string_payload: str, priority_level: int):
 	"""Publish a message to the email priority queue"""
 	# Prepare the message to be sent to the email priority queue
@@ -41,21 +43,21 @@ async def publish_email_message(channel: aio_pika.Channel, json_string_payload: 
 
 	# Pass it to redis for storage, tracks the notification status
 	try:
-		print(f" [⚓] Sending notification id {tracking_id} to Redis.... ")
+		logger.info(f" [⚓] Sending notification id {tracking_id} to Redis.... ")
 		await set_notification(tracking_id, notification_status)
-		print(f" [✅] notification id {tracking_id} was sent to Redis. ")
+		logger.info(f" [✅] notification id {tracking_id} was sent to Redis. ")
 	except Exception as e:
-		print(f" [⛔] notification id {tracking_id} was not sent to Redis; ", e)
+		logger.debug(f" [⛔] notification id {tracking_id} was not sent to Redis; ", e)
 	
 
 	try:
-		print(f" [⚓] Sending notification id {tracking_id} to RabbitMQ.... ")
+		logger.info(f" [⚓] Sending notification id {tracking_id} to RabbitMQ.... ")
 		# Route the payload or message to the exchange
 		await channel.default_exchange.publish(message=message, routing_key="email")
-		print(f" [✅] notification id {tracking_id} was sent to RabbitMQ. ")
+		logger.info(f" [✅] notification id {tracking_id} was sent to RabbitMQ. ")
 	except Exception as e:
-		print(f" [⛔] notification id {tracking_id} was not sent to RabbitMQ;. ", e)
-
+		logger.debug(f" [⛔] notification id {tracking_id} was not sent to RabbitMQ;. ", e)
+		raise e
 
 async def publish_push_message(channel: aio_pika.Channel, json_string_payload: str, priority_level: int):
 	"""Publish a message to the push priority queue"""
@@ -78,6 +80,7 @@ async def publish_push_message(channel: aio_pika.Channel, json_string_payload: s
 		"error": ""
 	}
 
+
 	# The key 'tracking_metadata' is assigned to the notification_status
 	# upon the usage of json.loads(), the key can be used to extrack and update
 	# the notification status and sent back to the API Gateway Servive.
@@ -88,5 +91,22 @@ async def publish_push_message(channel: aio_pika.Channel, json_string_payload: s
 		priority=priority_level,
 		delivery_mode=aio_pika.DeliveryMode.PERSISTENT
 	)
-	# Route the payload or message to the exchange, from exchange to the binded queue
-	await channel.default_exchange.publish(message=message, routing_key="push")
+
+	# Pass it to redis for storage, tracks the notification status
+	try:
+		logger.info(f" [⚓] Sending notification id {tracking_id} to Redis.... ")
+		await set_notification(tracking_id, notification_status)
+		logger.info(f" [✅] notification id {tracking_id} was sent to Redis. ")
+	except Exception as e:
+		logger.debug(f" [⛔] notification id {tracking_id} was not sent to Redis; ", e)
+
+	try:
+		logger.info(f" [⚓] Sending notification id {tracking_id} to RabbitMQ.... ")
+		# Route the payload or message to the exchange, from exchange to the binded queue
+		await channel.default_exchange.publish(message=message, routing_key="push")
+		logger.info(f" [✅] notification id {tracking_id} was sent to RabbitMQ. ")
+
+	except Exception as e:
+		logger.debug(f" [⛔] notification id {tracking_id} was not sent to RabbitMQ;. ", e)
+		raise e
+	

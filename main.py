@@ -67,7 +67,7 @@ async def metrics():
 
 
 
-@app.post("/api/v1/notifications/", dependencies=[Depends(RateLimiter(times=10, seconds=5))], status_code=status.HTTP_202_ACCEPTED)
+@app.post("/api/v1/notifications/", dependencies=[Depends(RateLimiter(times=1000, seconds=1))], status_code=status.HTTP_202_ACCEPTED)
 # , jwt_token: HTTPAuthorizationCredentials=Depends(get_current_jwt)
 async def notification(request: Request):
     """

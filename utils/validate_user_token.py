@@ -14,7 +14,6 @@ def get_current_jwt(credentials: HTTPAuthorizationCredentials = Depends(security
 	Validate the JWT and extract the UserID et al.
 	"""
 	token = credentials.credentials
-	print(token)
 	try:
 		# Decode the token
 		payload = jwt.decode(token, PUBLIC_KEY, algorithms=["RS256"])
