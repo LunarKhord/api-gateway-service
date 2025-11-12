@@ -5,6 +5,8 @@ from fastapi_limiter import FastAPILimiter
 import aio_pika
 
 
+from models.notification import NotificationStatus
+
 
 
 async def initialize_redis_client():
@@ -26,7 +28,7 @@ async def set_notification(notification_id, notification_payload):
         # Keys and values in the dict are automatically handled by redis-py
         if REDIS_CLIENT:
 	        await REDIS_CLIENT.hset(
-	            notification_id, 
+	            str(notification_id), 
 	            mapping=notification_payload
 	        )
 	        print(f"[✅] Saved the fields of {notification_id} to Redis Hash")
@@ -34,9 +36,23 @@ async def set_notification(notification_id, notification_payload):
         print(f"[⛔] Could not save {notification_id} to Redis: ", e)
 
 
+
+
 async def process_notification_message(message: aio_pika.IncomingMessage):
-	"""Handles the incoming message, and updates Redis"""
-	pass
+	"""Consumes the status report from the queue and updates Redis"""
+	async with message.process():
+		try:
+			# Deserialize the message body into a Python object for Pydantic Field Validation
+			message_body = message.body.decode()
+			status_update = NotificationStatus().model_validate_json(message_body)
+
+			# JSON dump of the validated Pydantic
+			status_update_json = status_update.model_dump(mode='json')
+
+			# Excecute the Redis notification update
+			await set_notification(status_update.notification_id, status_update_json)
+		except Exception as e:
+			raise e
 
 async def get_notification_status():
 	pass
