@@ -1,9 +1,13 @@
 from fastapi import FastAPI, HTTPException, Request, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse
+from fastapi_limiter.depends import RateLimiter
 from dotenv import load_dotenv
 import os
 from uuid import uuid4
+from prometheus_client import generate_latest
+from starlette.responses import Response
+
 
 
 from models.notification import NotificationTypeEnum
@@ -12,10 +16,11 @@ from utils.validate_user_token import get_current_jwt
 from utils.rabbit_mq.connection import lifespan, get_channel_with_retries
 from utils.rabbit_mq.producer import publish_email_message, publish_push_message
 from utils.redis.redis_utils import initialize_redis_client
+from middleware.metrics_middleware import MetricsMiddleWare
 
 
 app = FastAPI(title="Notification API Gateway", lifespan=lifespan)
-
+app.add_middleware(MetricsMiddleWare)
 """
 # TODO:
 # I was thinking since the endpoint /notifications
@@ -26,9 +31,19 @@ app = FastAPI(title="Notification API Gateway", lifespan=lifespan)
 
 @app.get("/health")
 async def server_health():
+    """Endpoint for retrieving the servers status including the following status of:
+        - RabbitMQ
+        - Redis
+    """
     return {"status": "Healthy"}
 
-@app.post("/api/v1/notifications/", status_code=status.HTTP_202_ACCEPTED)
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics():
+    """Endpoint for Prometheus to scrape metrics."""
+    return Response(content=generate_latest(), media_type="text/plain; version=0.0.4")
+
+@app.post("/api/v1/notifications/", dependencies=[Depends(RateLimiter(times=10, seconds=5))], status_code=status.HTTP_202_ACCEPTED)
 # , jwt_token: HTTPAuthorizationCredentials=Depends(get_current_jwt)
 async def notification(request: Request):
     """
