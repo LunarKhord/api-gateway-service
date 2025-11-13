@@ -79,6 +79,6 @@ uvicorn main:app --reload
 | $\text{GET}$ | `/api/v1/notifications/{id}` | **(To be implemented)** Retrieves the current status (from Redis) of a specific notification. | $\text{200 OK}$ |
 
 
-### System Design: Decoupled Notification Flow
+### System Design: API Gateway to Notification Flow
 
 ![Architecture Diagram showing the API Gateway pushing to RabbitMQ and updating Redis](docs/system_diagram.png)
