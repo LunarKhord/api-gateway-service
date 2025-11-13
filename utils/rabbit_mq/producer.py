@@ -9,8 +9,12 @@ EXCHANGE_NAME = "notifications.direct"
 
 logger = logging.getLogger(__name__)
  
-async def publish_email_message(channel: aio_pika.Channel, json_string_payload: str, priority_level: int):
+async def publish_email_message(channel: aio_pika.Channel, json_string_payload: str, priority_level: int, tracking_id: str = None):
 	"""Publish a message to the email priority queue"""
+	# Use provided tracking_id or generate new one
+	if tracking_id is None:
+		tracking_id = str(uuid.uuid4())
+	
 	# Prepare the message to be sent to the email priority queue
 	
 	# Deserialize the incoming payload from JSON to Dict Object
@@ -20,7 +24,6 @@ async def publish_email_message(channel: aio_pika.Channel, json_string_payload: 
 
 	# Generate a UUID for uniquely identifying each incoming notification
 	# This is to enable tracking notification status
-	tracking_id = str(uuid.uuid4())
 	current_timestamp = datetime.now(timezone.utc).isoformat()
 
 	# Notification Status payload construction

@@ -9,6 +9,7 @@ from uuid import uuid4
 from prometheus_client import generate_latest
 from starlette.responses import Response
 import json
+import logging
 
 
 
@@ -27,12 +28,7 @@ from utils.etcd_service import etcd_service
 
 app = FastAPI(title="Notification API Gateway", lifespan=lifespan)
 app.add_middleware(MetricsMiddleWare)
-"""
-# TODO:
-# I was thinking since the endpoint /notifications
-# relies so much on rabbit mq running
-# i make sure a startup is made to make sure rabbitmq and the postgres db are both running before anything else
-"""
+logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def startup_event():
@@ -140,10 +136,24 @@ async def notification(request: Request):
         # Routing Logic: Using the Enum as a means of determining what Queue to place the payload
         if response.notification_type == NotificationTypeEnum.EMAIL:
             RABBITMQ_CHANNEL = await get_channel_with_retries()
-            # Create enhanced payload with user email
+            # Generate tracking ID here
+            tracking_id = str(uuid4())
+            # Create enhanced payload with user email and tracking ID
             enhanced_payload = response.model_dump()
             enhanced_payload["to_email"] = user_email
-            await publish_email_message(RABBITMQ_CHANNEL, json.dumps(enhanced_payload), response.priority)
+            enhanced_payload["tracking_id"] = tracking_id  # Add tracking ID
+            await publish_email_message(RABBITMQ_CHANNEL, json.dumps(enhanced_payload), response.priority, tracking_id)
+            
+            # Return tracking ID to client
+            return JSONResponse(
+                status_code=202,
+                content={
+                    "success": True,
+                    "message": "Notification accepted for processing",
+                    "notification_id": tracking_id,
+                    "request_id": response.request_id
+                }
+            )
         elif response.notification_type == NotificationTypeEnum.PUSH:
             RABBITMQ_CHANNEL = await get_channel_with_retries()
             await publish_push_message(RABBITMQ_CHANNEL, response.model_dump_json(), response.priority)
