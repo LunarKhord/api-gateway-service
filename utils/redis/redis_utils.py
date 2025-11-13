@@ -13,7 +13,8 @@ async def initialize_redis_client():
 	global REDIS_CLIENT
 	try:
 		logger.info("Attempting to connect to the Redis Server.")
-		REDIS_CLIENT = redis.from_url("redis://localhost:6379", decode_responses=True)
+		# Change localhost to redis (Docker service name)
+		REDIS_CLIENT = redis.from_url("redis://redis:6379", decode_responses=True)
 		await REDIS_CLIENT.ping()
 		await FastAPILimiter.init(REDIS_CLIENT)
 		logger.info("Redis Server connected successfully.")
