@@ -28,75 +28,39 @@ RABBITMQ_CHANNEL: Optional[Channel] = None
 STATUS_EXCHANGE_NAME = "status.update.exchange"
 STATUS_QUEUE = "status.updates"
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-	"""
-	FastAPI lifespan function intended to secure a connection the rabbitmq server before allowing any request to come in
-	"""
-	global RABBITMQ_CONNECTION, RABBITMQ_CHANNEL
-	logger.info("[x] Attempting a connecting to the RabbitMQ server.")
-	try:
-		# using connect_robust handles, connection re-attempts.
-		rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
-		RABBITMQ_CONNECTION = await connect_robust(rabbitmq_url, client_properties={"connection_name": "API_Gateway_Publisher"})
-
-		# Create a channel for publishing
-		RABBITMQ_CHANNEL = await RABBITMQ_CONNECTION.channel()
-
-		# Declare an Exchange, it acts as the centeral hub for all outgoing messages FORWARD
-		await RABBITMQ_CHANNEL.declare_exchange(name="notifications.direct",type="direct",durable=True)
-
-		# Declare an Exchange, it acts as the centeral hub for all incoming messages REVERSE
-		# it holds the notification updates of every notification sent downstream
-		# Exchange
-		status_update = await RABBITMQ_CHANNEL.declare_exchange(name=STATUS_EXCHANGE_NAME, type="topic", durable=True)
-		# # Queue
-		status_queue = await RABBITMQ_CHANNEL.declare_queue(STATUS_QUEUE, durable=True)
-		await status_queue.bind(STATUS_EXCHANGE_NAME, routing_key="status.update.#")
-
-		# # Start the status consumer task
-		# This creates an async task that serves the purpose of passing incoming messages into the queue
-		# onto the process_notification_message function, it's purpose would be to update redis to
-		# suite the current notification state.
-		asyncio.create_task(status_queue.consume(process_notification_message))
-
-		logger.info(" [x] Successfully connected to RabbitMQ and declared an exchange.")
-	except Exception as e:
-		logger.error(f"[x] A fatail error occured, during RabbitMQ connection stage;Have a look see: ", e)
-	
-	# A Connection attempt for Redis on startup
-	try:
-		logger.info("[x] Attempting a connecting to the Redis server.")
-		await initialize_redis_client()
-	except Exception as e:
-		logger.error(f"[x] A fatail error occured, during Redis connection stage;Have a look see: ", e)
-	
-
-	yield
-	
-	# A shutdown logic for RabbitMQ
-	logger.info(" [x] We're DONE here, time to gracefully shutdown RabbitMQ, Attempting..........")
-	if RABBITMQ_CONNECTION:
-		await RABBITMQ_CONNECTION.close()
-		logger.info("[x] RabbitMQ was closed Successfully.Thank You....")
-
-
-
-
 
 # Where N --> Number
 MAX_N_RETRIES = 7
 MAX_TIMEOUT_BEFORE_RETRY = 0.5
 """A function that servers the purpose of returning the RABBIT_MQ channel, and keeps checking if its been created for an N number of times"""
 async def get_channel_with_retries() -> Optional[Channel]:
-	for current_try in range(MAX_N_RETRIES):
-		if RABBITMQ_CHANNEL:
-			return RABBITMQ_CHANNEL
-		await asyncio.sleep(MAX_TIMEOUT_BEFORE_RETRY)
+    """Get or create RabbitMQ channel with retries"""
+    global RABBITMQ_CHANNEL  # Add this line
+    
+    for current_try in range(MAX_N_RETRIES):
+        if RABBITMQ_CHANNEL and not RABBITMQ_CHANNEL.is_closed:
+            return RABBITMQ_CHANNEL
+        
+        # Try to create channel if it doesn't exist
+        try:
+            if RABBITMQ_CONNECTION and not RABBITMQ_CONNECTION.is_closed:
+                RABBITMQ_CHANNEL = await RABBITMQ_CONNECTION.channel()
+                if RABBITMQ_CHANNEL:
+                    # Re-declare exchange if needed
+                    await RABBITMQ_CHANNEL.declare_exchange(name="notifications.direct", type="direct", durable=True)
+                    return RABBITMQ_CHANNEL
+        except Exception as e:
+            logger.warning(f"Failed to create channel (attempt {current_try + 1}): {e}")
+        
+        if current_try < MAX_N_RETRIES - 1:
+            await asyncio.sleep(MAX_TIMEOUT_BEFORE_RETRY)
+    
+    return None
 
 
 """A function that serves the purpose of returing a RabbitMQ connection"""
 async def get_rabbitmq_connection():
+    global RABBITMQ_CONNECTION
 	for current_try in range(MAX_N_RETRIES):
 		if RABBITMQ_CONNECTION:
 			return RABBITMQ_CONNECTION
