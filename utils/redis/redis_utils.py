@@ -58,5 +58,41 @@ async def process_notification_message(message: aio_pika.IncomingMessage):
 			logger.debug(f"[⛔] Could not process notification message", e)
 			raise e
 
-async def get_notification_status():
-	pass
+async def get_notification_status(notification_id: str):
+    """Retrieve notification status from Redis"""
+    try:
+        logger.info(f"Retrieving status for notification {notification_id}")
+        if REDIS_CLIENT:
+            # Get all fields for the notification hash
+            status_data = await REDIS_CLIENT.hgetall(str(notification_id))
+            if status_data:
+                # Convert Redis hash to proper format
+                return {
+                    "notification_id": notification_id,
+                    "status": status_data.get("status", "unknown"),
+                    "timestamp": status_data.get("timestamp"),
+                    "error": status_data.get("error", "")
+                }
+        return None
+    except Exception as e:
+        logger.error(f"Error retrieving notification status: {e}")
+        return None
+
+async def is_request_processed(request_id: str) -> bool:
+    """Check if request has already been processed"""
+    try:
+        if REDIS_CLIENT:
+            exists = await REDIS_CLIENT.exists(f"processed_request:{request_id}")
+            return exists == 1
+        return False
+    except Exception as e:
+        logger.error(f"Error checking request idempotency: {e}")
+        return False
+
+async def mark_request_processed(request_id: str, ttl: int = 86400):
+    """Mark request as processed with TTL"""
+    try:
+        if REDIS_CLIENT and request_id:
+            await REDIS_CLIENT.set(f"processed_request:{request_id}", "1", ex=ttl)
+    except Exception as e:
+        logger.error(f"Error marking request as processed: {e}")

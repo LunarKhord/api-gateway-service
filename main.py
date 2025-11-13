@@ -11,6 +11,7 @@ from starlette.responses import Response
 
 
 
+
 from models.notification import NotificationTypeEnum
 from utils.load_request import load_request_payload
 from utils.validate_user_token import get_current_jwt
@@ -18,7 +19,10 @@ from utils.rabbit_mq.connection import lifespan, get_channel_with_retries, get_r
 from utils.rabbit_mq.producer import publish_email_message, publish_push_message
 from utils.redis.redis_utils import initialize_redis_client
 from middleware.metrics_middleware import MetricsMiddleWare
-
+from utils.service_client import user_service_client, template_service_client
+from utils.redis.redis_utils import get_notification_status
+from utils.redis.redis_utils import is_request_processed, mark_request_processed
+from utils.etcd_service import etcd_service
 
 app = FastAPI(title="Notification API Gateway", lifespan=lifespan)
 app.add_middleware(MetricsMiddleWare)
@@ -29,6 +33,15 @@ app.add_middleware(MetricsMiddleWare)
 # i make sure a startup is made to make sure rabbitmq and the postgres db are both running before anything else
 """
 
+@app.on_event("startup")
+async def startup_event():
+    """Register service with etcd on startup"""
+    await etcd_service.register_service("api-gateway", "api-gateway-001", "0.0.0.0", 8000)
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Deregister service from etcd on shutdown"""
+    await etcd_service.deregister_service("api-gateway", "api-gateway-001")
 
 @app.get("/health", status_code=status.HTTP_200_OK)
 async def server_health():
@@ -68,35 +81,94 @@ async def metrics():
 
 
 @app.post("/api/v1/notifications/", dependencies=[Depends(RateLimiter(times=1000, seconds=1))], status_code=status.HTTP_202_ACCEPTED)
-# , jwt_token: HTTPAuthorizationCredentials=Depends(get_current_jwt)
 async def notification(request: Request):
     """
-    The entry point for all incoming notifications, POST requests
+    The entry point for all incoming notifications
     """
     
-    # Programmer's NOTE: The intention behind using Request, as dependency injection NotificationRequest
-    # was so i could have control over the JSONResponse in case of a validation error,
-    # without it, FastAPI, automatically handles the messages and response codes.
-   
-    # Validation: A vaidation is performed on the users JWT token.
-    try:
-        pass
-    except Exception as e:
-        raise e
-
     # Validation: A validation is performed after the JWT checks out on the Request.body()
     try:
         response = await load_request_payload(request)
+        
+        # Idempotency check
+        if await is_request_processed(response.request_id):
+            logger.info(f"Duplicate request detected: {response.request_id}")
+            return JSONResponse(
+                status_code=200,  # Return 200 for idempotent requests
+                content={
+                    "success": True,
+                    "message": "Request already processed",
+                    "request_id": response.request_id
+                }
+            )
+        
+        # Mark request as being processed
+        await mark_request_processed(response.request_id)
+        
+        # Use circuit breaker to get user preferences
+        try:
+            user_data = await user_service_client.get(f"/users/{response.user_id}")
+            if not user_data.get("data", {}).get("preferences", {}).get(response.notification_type, True):
+                return JSONResponse(
+                    status_code=400, 
+                    content={"error": f"User has disabled {response.notification_type} notifications"}
+                )
+        except Exception as e:
+            logger.warning(f"Could not verify user preferences: {e}. Proceeding with notification.")
+        
+        # Use circuit breaker to get template
+        try:
+            template_data = await template_service_client.get(f"/templates/name/{response.template_code}")
+            template = template_data.get("data", {})
+        except Exception as e:
+            logger.error(f"Could not fetch template {response.template_code}: {e}")
+            return JSONResponse(status_code=500, content={"error": "Template service unavailable"})
+        
         # Routing Logic: Using the Enum as a means of determining what Queue to place the payload
         if response.notification_type == NotificationTypeEnum.EMAIL:
-            # Place Valid Payload into the Email Queue
             RABBITMQ_CHANNEL = await get_channel_with_retries()
             await publish_email_message(RABBITMQ_CHANNEL, response.model_dump_json(), response.priority)
         elif response.notification_type == NotificationTypeEnum.PUSH:
-            # Place Valid Payload into the Push Queue
+            RABBITMQ_CHANNEL = await get_channel_with_retries()
             await publish_push_message(RABBITMQ_CHANNEL, response.model_dump_json(), response.priority)
 
-            
     except Exception as e:
         print(e)
         return JSONResponse(status_code=422, content={ "error": {"message": "Invalid payload"}})
+
+@app.get("/api/v1/notifications/{notification_id}")
+async def get_notification(notification_id: str):
+    """
+    Retrieve the current status of a notification
+    """
+    try:
+        status = await get_notification_status(notification_id)
+        if status:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "success": True,
+                    "data": status,
+                    "message": "Notification status retrieved successfully"
+                }
+            )
+        else:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "success": False,
+                    "error": "Notification not found",
+                    "message": "No notification found with the provided ID"
+                }
+            )
+    except Exception as e:
+        logger.error(f"Error retrieving notification status: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": "Internal server error",
+                "message": "Failed to retrieve notification status"
+            }
+        )
+
