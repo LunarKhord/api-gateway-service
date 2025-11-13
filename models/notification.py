@@ -66,3 +66,19 @@ class NotificationStatus(BaseModel):
 	status: NotificationStatusEnum
 	timestamp: Optional[datetime] = None
 	error: Optional[str] = Field(None, description="Detailed error message if status is 'failed'.")
+
+
+class TemplateChannelEnum(str, Enum):
+    EMAIL = "email"
+    PUSH = "push"
+
+class CreateTemplateRequest(BaseModel):
+    """Model for creating templates through API Gateway"""
+    template_name: str = Field(..., description="Unique name for the template")
+    channel_type: TemplateChannelEnum = Field(..., description="Template type: email or push")
+    template_subject: Optional[str] = Field(None, description="Email subject (optional for email templates)")
+    template_content: str = Field(..., description="Template content with variables")
+    template_variables: Optional[List[str]] = Field(None, description="List of variable names")
+    template_language: Optional[str] = Field("en", description="Template language")
+    template_version: Optional[int] = Field(1, description="Template version")
+    is_active: Optional[bool] = Field(True, description="Whether template is active")

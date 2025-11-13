@@ -5,6 +5,7 @@ import logging
 from fastapi import FastAPI
 import asyncio
 from aio_pika import Channel
+import os
 
 from utils.redis.redis_utils import initialize_redis_client, process_notification_message
 
@@ -36,7 +37,8 @@ async def lifespan(app: FastAPI):
 	logger.info("[x] Attempting a connecting to the RabbitMQ server.")
 	try:
 		# using connect_robust handles, connection re-attempts.
-		RABBITMQ_CONNECTION = await connect_robust("amqp://guest:guest@localhost/", client_properties={"connection_name": "API_Gateway_Publisher"})
+		rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+		RABBITMQ_CONNECTION = await connect_robust(rabbitmq_url, client_properties={"connection_name": "API_Gateway_Publisher"})
 
 		# Create a channel for publishing
 		RABBITMQ_CHANNEL = await RABBITMQ_CONNECTION.channel()

@@ -12,7 +12,7 @@ from starlette.responses import Response
 
 
 
-from models.notification import NotificationTypeEnum
+from models.notification import NotificationTypeEnum, CreateTemplateRequest
 from utils.load_request import load_request_payload
 from utils.validate_user_token import get_current_jwt
 from utils.rabbit_mq.connection import lifespan, get_channel_with_retries, get_rabbitmq_connection
@@ -35,8 +35,12 @@ app.add_middleware(MetricsMiddleWare)
 
 @app.on_event("startup")
 async def startup_event():
-    """Register service with etcd on startup"""
-    await etcd_service.register_service("api-gateway", "api-gateway-001", "0.0.0.0", 8000)
+    """Register service with etcd on startup and initialize Redis for rate limiting"""
+    # Initialize Redis first (required for FastAPILimiter)
+    await initialize_redis_client()
+    
+    # Then register with etcd
+    await etcd_service.register_service("api-gateway", "api-gateway-001", "api-gateway", 8000)
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -172,3 +176,37 @@ async def get_notification(notification_id: str):
             }
         )
 
+# In api-gateway-service/main.py
+
+
+@app.post("/api/v1/users/")
+async def register_user(request: Request):
+    return await proxy_to_service(user_service_client, request, "POST", "/auth/register")
+
+@app.post("/api/v1/auth/login")
+async def login(request: Request):
+    return await proxy_to_service(user_service_client, request, "POST", "/auth/login")
+
+@app.get("/api/v1/users/")
+async def get_users():
+    return await user_service_client.get("/users/")
+
+# Template Management Endpoints  
+@app.post("/api/v1/templates/")
+async def create_template(template_data: CreateTemplateRequest):
+    # Use service client directly with validated data
+    return await template_service_client.post("/templates/", json=template_data.dict())
+
+@app.get("/api/v1/templates/")
+async def get_templates():
+    return await template_service_client.get("/templates/")
+
+# Helper function
+async def proxy_to_service(service_client, request, method, endpoint):
+    """Proxy request to individual service"""
+    data = await request.json()
+    if method == "POST":
+        return await service_client.post(endpoint, json=data)
+    elif method == "GET":
+        return await service_client.get(endpoint)
+    

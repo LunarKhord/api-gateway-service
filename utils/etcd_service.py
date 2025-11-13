@@ -1,17 +1,34 @@
 import asyncio
 import json
 import logging
+import os
 from typing import Optional, Dict, Any
 import etcd3
 
 logger = logging.getLogger(__name__)
 
 class EtcdService:
-    def __init__(self, host: str = "localhost", port: int = 2379):
+    def __init__(self, host: str = None, port: int = None):
+        # Read from environment variable ETCD_URL
+        etcd_url = os.getenv("ETCD_URL", "http://localhost:2379")
+        
+        # Parse the URL
+        if etcd_url.startswith("http://"):
+            etcd_url = etcd_url[7:]  # Remove http:// prefix
+        
+        if ":" in etcd_url:
+            host, port_str = etcd_url.split(":")
+            port = int(port_str)
+        else:
+            host = etcd_url
+            port = 2379
+            
         self.client = etcd3.client(host=host, port=port)
         self.service_prefix = "/services/"
         self.lease_ttl = 30  # 30 seconds
+        logger.info(f"🔗 etcd client initialized: {host}:{port}")
 
+   
     async def register_service(self, service_name: str, service_id: str, host: str, port: int):
         """Register a service with etcd"""
         try:
