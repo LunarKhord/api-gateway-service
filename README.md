@@ -77,6 +77,7 @@ uvicorn main:app --reload
 | $\text{POST}$ | `/api/v1/notifications/` | Ingests a new notification request and queues it for asynchronous processing. | $\text{202 Accepted}$ |
 | $\text{GET}$ | `/health` | Returns the application health status. | $\text{200 OK}$ |
 | $\text{GET}$ | `/api/v1/notifications/{id}` | **(To be implemented)** Retrieves the current status (from Redis) of a specific notification. | $\text{200 OK}$ |
+| $\text{GET}$ | `/metrics` | **(To be implemented)** Retrieves the metrics of the API-Gateway Server from Prometheus. | $\text{200 OK}$ |
 
 
 ### System Design: API Gateway to Notification Flow

@@ -60,7 +60,7 @@ async def server_health():
     return JSONResponse(health_status)
 
 
-@app.get("/metrics", include_in_schema=False)
+@app.get("/metrics", include_in_schema=False, status_code=status.HTTP_200_OK)
 async def metrics():
     """Endpoint for Prometheus to scrape metrics."""
     return Response(content=generate_latest(), media_type="text/plain; version=0.0.4")
