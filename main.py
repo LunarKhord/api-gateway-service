@@ -8,6 +8,7 @@ import os
 from uuid import uuid4
 from prometheus_client import generate_latest
 from starlette.responses import Response
+import json
 
 
 
@@ -112,13 +113,21 @@ async def notification(request: Request):
         # Use circuit breaker to get user preferences
         try:
             user_data = await user_service_client.get(f"/users/{response.user_id}")
-            if not user_data.get("data", {}).get("preferences", {}).get(response.notification_type, True):
+            user_info = user_data.get("data", {})
+            
+            # Check user preferences
+            if not user_info.get("preferences", {}).get(response.notification_type, True):
                 return JSONResponse(
                     status_code=400, 
                     content={"error": f"User has disabled {response.notification_type} notifications"}
                 )
+            
+            # Extract user email for notifications
+            user_email = user_info.get("email")
+            
         except Exception as e:
             logger.warning(f"Could not verify user preferences: {e}. Proceeding with notification.")
+            user_email = None  # Fallback
         
         # Use circuit breaker to get template
         try:
@@ -131,7 +140,10 @@ async def notification(request: Request):
         # Routing Logic: Using the Enum as a means of determining what Queue to place the payload
         if response.notification_type == NotificationTypeEnum.EMAIL:
             RABBITMQ_CHANNEL = await get_channel_with_retries()
-            await publish_email_message(RABBITMQ_CHANNEL, response.model_dump_json(), response.priority)
+            # Create enhanced payload with user email
+            enhanced_payload = response.model_dump()
+            enhanced_payload["to_email"] = user_email
+            await publish_email_message(RABBITMQ_CHANNEL, json.dumps(enhanced_payload), response.priority)
         elif response.notification_type == NotificationTypeEnum.PUSH:
             RABBITMQ_CHANNEL = await get_channel_with_retries()
             await publish_push_message(RABBITMQ_CHANNEL, response.model_dump_json(), response.priority)
